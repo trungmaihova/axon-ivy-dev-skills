@@ -40,9 +40,29 @@ public class CopilotAgentRunner implements AgentRunner, AutoCloseable {
 
   @Override
   public AgentRun run(String prompt, Path workingDirectory, boolean enableSkills) {
-
     var usageEvents = Collections.synchronizedList(new ArrayList<AssistantUsageEvent.AssistantUsageEventData>());
+    var config = setupConfig(workingDirectory, enableSkills, usageEvents);
 
+    try (var session = client.createSession(config).get()) {
+      long startedAt = System.nanoTime();
+      var messageOptions = new MessageOptions()
+          .setPrompt(prompt)
+          .setAgentMode(AgentMode.AUTOPILOT);
+      var result = session.sendAndWait(messageOptions, RUN_TIMEOUT.toMillis()).get();
+      var elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+
+      var skillsFired = session.getRpc().skills.getInvoked().get().skills().stream()
+          .map(invokedSkill -> new InvokedSkill(invokedSkill.name(), invokedSkill.path()))
+          .collect(Collectors.toSet());
+
+      return new AgentRun(result.getData().content(), skillsFired, Usage.of(usageEvents), elapsed);
+
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to run agent", e);
+    }
+  }
+
+  private SessionConfig setupConfig(Path workingDirectory, boolean enableSkills, List<AssistantUsageEvent.AssistantUsageEventData> usageEvents) {
     var config = new SessionConfig()
         .setModel(model)
         .setWorkingDirectory(workingDirectory.toString())
@@ -62,23 +82,7 @@ public class CopilotAgentRunner implements AgentRunner, AutoCloseable {
       config.setEnableSkills(false);
     }
 
-    try (var session = client.createSession(config).get()) {
-      long startedAt = System.nanoTime();
-      var messageOptions = new MessageOptions()
-          .setPrompt(prompt)
-          .setAgentMode(AgentMode.AUTOPILOT);
-      var result = session.sendAndWait(messageOptions, RUN_TIMEOUT.toMillis()).get();
-      var elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
-
-      var skillsFired = session.getRpc().skills.getInvoked().get().skills().stream()
-          .map(invokedSkill -> new InvokedSkill(invokedSkill.name(), invokedSkill.path()))
-          .collect(Collectors.toSet());
-
-      return new AgentRun(result.getData().content(), skillsFired, Usage.of(usageEvents), elapsed);
-
-    } catch (Exception e) {
-      throw new RuntimeException("Failed to run agent", e);
-    }
+    return config;
   }
 
   @Override

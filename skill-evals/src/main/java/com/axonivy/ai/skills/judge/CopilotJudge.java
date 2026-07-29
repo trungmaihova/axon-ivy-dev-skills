@@ -24,14 +24,13 @@ public class CopilotJudge implements Judge, AutoCloseable {
 
   private final String model;
   private final CopilotClient client;
-  private final ObjectMapper objectMapper;
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   private static final Duration RUN_TIMEOUT = Duration.ofMinutes(10);
 
   public CopilotJudge(String model) {
     this.model = model;
     this.client = new CopilotClient();
-    this.objectMapper = new ObjectMapper();
   }
 
   @Override
@@ -57,7 +56,7 @@ public class CopilotJudge implements Judge, AutoCloseable {
     try (var session = client.createSession(config).get()) {
       var msgOptions = new MessageOptions().setPrompt(judgePrompt);
       var result = session.sendAndWait(msgOptions, RUN_TIMEOUT.toMillis()).get();
-      return objectMapper.readValue(result.getData().content(), Verdict.class);
+      return OBJECT_MAPPER.readValue(result.getData().content(), Verdict.class);
     } catch (InterruptedException | ExecutionException e) {
       throw new RuntimeException("Judge call failed", e.getCause());
     }

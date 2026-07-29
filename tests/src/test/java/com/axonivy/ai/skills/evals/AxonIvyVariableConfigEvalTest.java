@@ -1,11 +1,11 @@
 package com.axonivy.ai.skills.evals;
 
 import static com.axonivy.ai.skills.judge.LlmAssert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -15,6 +15,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.yaml.snakeyaml.Yaml;
 
 import com.axonivy.ai.skills.agent.CopilotAgentRunner;
+import com.axonivy.ai.skills.agent.InvokedSkill;
 import com.axonivy.ai.skills.agent.Workspace;
 import com.axonivy.ai.skills.judge.CopilotJudge;
 
@@ -57,23 +58,26 @@ class AxonIvyVariableConfigEvalTest {
 
     var run = runner.run("add a new variable called PageSize and set default value to 10 and also a short comment to describe it",
         workspace.root(), enableSkills);
+    var variablesYaml = workspace.read(VARIABLES_YAML);
 
-    // System.out.println("Run result: " + run.transcript());
-    // System.out.println("Run usage: " + run.usage());
-    // System.out.println(workspace.read(VARIABLES_YAML));
-
-    assertTrue(run.usage().outputTokens() < 15_000);
-    assertTrue(run.elapsed().toMinutes() < 5);
+    if (enableSkills) {
+      assertThat(run.usage().outputTokens()).isLessThan(800);
+      assertThat(run.elapsed().toMinutes()).isLessThan(1);
+    }
 
     // llm-as-judge check
-    assertThat(judge, workspace.read(VARIABLES_YAML))
+    assertThat(judge, variablesYaml)
         .satisfies("the comment explain clearly in software application context what the PageSize variable is.");
 
     // deterministic check
-    assertEquals(enableSkills, run.invoked(SKILL));
+    var expectedSkills = enableSkills ? List.of(SKILL) : List.<String>of();
+    assertThat(run.invokedSkills())
+        .extracting(InvokedSkill::name)
+        .containsExactlyInAnyOrderElementsOf(expectedSkills);
+
     assertDoesNotThrow(() -> {
-      new Yaml().load(workspace.read(VARIABLES_YAML));
+      new Yaml().load(variablesYaml);
     });
-    assertTrue(workspace.read(VARIABLES_YAML).contains("PageSize: \"10\""));
+    assertThat(variablesYaml.stripTrailing()).contains("PageSize: \"10\"");
   }
 }
